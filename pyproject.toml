@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling>=1.22"]
+build-backend = "hatchling.build"
+
+[project]
+name = "faers-mini-signal"
+version = "0.1.0"
+description = "Local FAERS disproportionality (PRR/ROR/IC) with DuckDB + Streamlit"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{ name = "faers-mini-signal contributors" }]
+dependencies = [
+  "duckdb>=0.10",
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "pandas>=2.1",
+  "pyarrow>=14",
+  "typer>=0.12",
+  "streamlit>=1.32",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+  "pytest-cov>=4.1",
+  "ruff>=0.4",
+  "black>=23.12",
+  "mypy>=1.8",
+  "pre-commit>=3.6",
+]
+
+[project.scripts]
+faers-signal = "faers_signal.cli:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+
