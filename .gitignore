@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.venv/
+*.pyc
+
+# Project
+data/*.duckdb
+data/*.parquet
+data/*.csv
+.streamlit/
+
+# Tools
+.ruff_cache/
+
