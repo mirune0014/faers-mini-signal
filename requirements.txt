@@ -1,0 +1,20 @@
+# Core dependencies for FAERS Mini Signal
+duckdb>=0.10.0
+numpy>=1.26.0
+scipy>=1.11.0
+pandas>=2.1.0
+pyarrow>=14.0.0
+typer>=0.12.0
+streamlit>=1.32.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Code formatting and linting
+ruff>=0.4.0
+black>=23.12.0
+mypy>=1.8.0
+
+# Pre-commit hooks
+pre-commit>=3.6.0
