@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import importlib.resources as resources
 
 import duckdb
 import numpy as np
@@ -30,7 +31,7 @@ drug_filter = st.sidebar.text_input("Drug startswith", value="")
 pt_filter = st.sidebar.text_input("PT startswith", value="")
 
 con = duckdb.connect(str(db_path))
-sql = (Path(__file__).parents[1] / "src" / "faers_signal" / "abcd.sql").read_text(encoding="utf-8")
+sql = resources.files("faers_signal").joinpath("abcd.sql").read_text(encoding="utf-8")
 if not suspect_only:
     sql = sql.replace("FROM drugs WHERE role = 1", "FROM drugs WHERE role in (1,2,3)")
 
@@ -73,4 +74,3 @@ st.dataframe(mdf, use_container_width=True)
 
 csv = mdf.to_csv(index=False).encode("utf-8") if not mdf.empty else b""
 st.download_button("Download CSV", data=csv, file_name="metrics.csv", mime="text/csv")
-
