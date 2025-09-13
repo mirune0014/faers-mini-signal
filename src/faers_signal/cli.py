@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+import importlib.resources as resources
 
 import duckdb
 import typer
@@ -15,7 +16,8 @@ app = typer.Typer(help="FAERS mini signal: ETL, build metrics, export, and UI")
 def _ensure_db(db_path: Path) -> duckdb.DuckDBPyConnection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(db_path))
-    schema_sql = (Path(__file__).with_name("schema.sql")).read_text(encoding="utf-8")
+    # Load packaged schema.sql
+    schema_sql = resources.files("faers_signal").joinpath("schema.sql").read_text(encoding="utf-8")
     con.execute(schema_sql)
     return con
 
@@ -55,7 +57,8 @@ def build(
 ):
     """Compute A/B/C/D and metrics (PRR/ROR/IC/chi-square) and write to Parquet/CSV."""
     con = _ensure_db(db)
-    sql = (Path(__file__).with_name("abcd.sql")).read_text(encoding="utf-8")
+    # Load packaged abcd.sql
+    sql = resources.files("faers_signal").joinpath("abcd.sql").read_text(encoding="utf-8")
     # Toggle suspect-only by adjusting a temp view
     if not suspect_only:
         # When not suspect-only, we treat all drugs as candidates (role in (1,2,3))
