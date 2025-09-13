@@ -1,13 +1,15 @@
 -- suspect=1 の薬剤カウント
 CREATE TEMP TABLE suspect AS
 SELECT DISTINCT safetyreportid, lower(drug_name) AS drug
-FROM drugs WHERE role = 1;
+FROM drugs
+WHERE role = 1;
 
 -- 反応集合（PT）
 CREATE TEMP TABLE rxn AS
-SELECT DISTINCT safetyreportid, lower(meddra_pt) AS pt FROM reactions;
+SELECT DISTINCT safetyreportid, lower(meddra_pt) AS pt
+FROM reactions;
 
--- A: 同一レポート内で suspect薬 と 該当PT が共存
+-- A: 同一レポートで suspect薬 と 該当PT が共存
 CREATE TEMP TABLE a_counts AS
 SELECT s.drug, r.pt, COUNT(*) AS A
 FROM suspect s
