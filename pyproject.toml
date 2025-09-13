@@ -46,3 +46,19 @@ addopts = "-q"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/faers_signal"]
+include = [
+  "src/faers_signal/*.sql",
+  "app/streamlit_app.py",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/faers_signal/*.py",
+  "src/faers_signal/*.sql",
+  "app/streamlit_app.py",
+  "README.md",
+  "docs/**",
+  "tests/**",
+]
