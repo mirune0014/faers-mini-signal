@@ -25,7 +25,12 @@ faers-signal ui --db data/faers.duckdb
 ## Notes
 - Schema lives in `src/faers_signal/schema.sql`; ABCD counts in `src/faers_signal/abcd.sql`.
 - Ingestion functions are placeholders for EVP. Tests cover metrics math and ABCD SQL behavior.
+- CLI/UI load packaged SQL via `importlib.resources`; packaging includes `.sql` and `app/streamlit_app.py`.
 - This tool aids hypothesis generation only; FAERS data does not imply causality.
 
 MIT License.
 
+## Status
+- ETL for openFDA/quarterly files is not implemented yet (placeholders).
+- ABCD SQL fixed and packaged; `faers-signal build` and Streamlit UI operate on existing DBs.
+- See `docs/PROGRESS.md` for details and next steps.
