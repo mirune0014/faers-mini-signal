@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 import importlib.resources as resources
 
@@ -6,6 +7,13 @@ import duckdb
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+# Ensure `src/` is on sys.path when running the app directly from the repo.
+# This lets `from faers_signal import ...` work without an editable install.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SRC_DIR = _REPO_ROOT / "src"
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
 
 from faers_signal.metrics import (
     ABCD,
