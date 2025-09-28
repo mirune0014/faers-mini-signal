@@ -1,15 +1,27 @@
--- suspect=1 の薬剤カウント
+-- ABCD aggregation at the report level
+--
+-- Definitions (per drug/PT pair):
+--   A: suspect drug present AND PT present in the same report
+--   B: suspect drug present AND PT absent
+--   C: suspect drug absent  AND PT present
+--   D: neither (complement)
+--
+-- Notes:
+-- - Default uses suspect-only (role = 1). CLI/UI can switch to role in (1,2,3)
+--   by replacing the WHERE clause in the first CTE.
+
+-- Suspect drug set (role=1)
 CREATE TEMP TABLE suspect AS
 SELECT DISTINCT safetyreportid, lower(drug_name) AS drug
 FROM drugs
 WHERE role = 1;
 
--- 反応集合（PT）
+-- Reaction PT set
 CREATE TEMP TABLE rxn AS
 SELECT DISTINCT safetyreportid, lower(meddra_pt) AS pt
 FROM reactions;
 
--- A: 同一レポートで suspect薬 と 該当PT が共存
+-- Co-occurrence counts for A
 CREATE TEMP TABLE a_counts AS
 SELECT s.drug, r.pt, COUNT(*) AS A
 FROM suspect s
@@ -19,17 +31,20 @@ GROUP BY s.drug, r.pt;
 WITH
 drug_tot AS (
   SELECT drug, COUNT(DISTINCT safetyreportid) AS Dtot
-  FROM suspect GROUP BY 1
+  FROM suspect
+  GROUP BY 1
 ),
 pt_tot AS (
   SELECT pt, COUNT(DISTINCT safetyreportid) AS Rtot
-  FROM rxn GROUP BY 1
+  FROM rxn
+  GROUP BY 1
 ),
 rep_tot AS (
   SELECT COUNT(DISTINCT safetyreportid) AS N FROM reports
 )
 SELECT
-  a.drug, a.pt,
+  a.drug,
+  a.pt,
   a.A                                                    AS A,
   (d.Dtot - a.A)                                         AS B,
   (r.Rtot - a.A)                                         AS C,
