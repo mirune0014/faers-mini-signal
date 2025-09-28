@@ -20,6 +20,7 @@ pip install -e .[dev]
 # 3) デモデータでDB初期化（または openFDA / 四半期ファイルを取り込み）
 faers-signal etl --source demo --db data\faers.duckdb
 # 例: openFDA ローカルZIP/JSONを取り込み
+https://open.fda.gov/data/downloads/
 # faers-signal etl --source openfda --input "C:\\path\\to\\openfda_events.zip" --db data\faers.duckdb
 # 例: 四半期ファイル（DEMO/DRUG/REAC）を取り込み
 # faers-signal etl --source qfiles --input "C:\\path\\to\\faers_qfiles.zip" --db data\faers.duckdb
@@ -118,7 +119,7 @@ faers-signal ui --db data/faers.duckdb
 - スキーマがない/テーブル不存在
   - まず `faers-signal etl --source demo --db data\faers.duckdb` を実行（スキーマ初期化）
 
-より詳しい説明は `docs/USAGE.md` と `docs/troubleshooting.md` を参照してください。
+より詳しい説明は `docs/USAGE.md`、`docs/troubleshooting.md`、改善計画は `docs/IMPROVEMENTS.md` を参照してください。
 
 ## 重要な注意（FAERSデータの限界）
 - FAERS は自発報告に基づくデータであり、因果関係を示すものではありません。
