@@ -31,6 +31,13 @@
 - Never commit secrets or raw PHI/PII. Use `.env` (git‑ignored) and provide `.env.example` when needed.
 - Store large data in `data/` and add an appropriate `.gitignore` entry.
 
+### Git Identity (このリポジトリの推奨ローカル設定)
+- メインメンテナの署名情報（ローカル設定の例）:
+  - `git config user.name "mirune0014"`
+  - `git config user.email "eem2503@ed.socu.ac.jp"`
+- 他のコントリビュータは自分の GitHub に登録済みのメール/名前を設定してください。
+- 既存コミットの著者を修正する場合は `git rebase -i` や `git filter-branch` を利用。
+
 ## Agent‑Specific Notes
-- Add new modules under `src/faers_mini_signal/`; avoid placing code at the repo root.
+- Add new modules under `src/faers_signal/`; avoid placing code at the repo root.
 - Keep changes minimal and focused; update this file if conventions evolve.
