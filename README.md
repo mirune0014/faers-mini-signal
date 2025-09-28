@@ -2,6 +2,12 @@
 
 DuckDB と Streamlit を使ってローカルで FAERS（FDA Adverse Event Reporting System）の不均衡解析（PRR / ROR±95%CI / IC±95%CI）を行うツールです。正規化済みの `reports` / `drugs` / `reactions` テーブルから ABCD を集計し、指標を計算して最小限の UI に表示します。
 
+## 背景・目的
+
+- 公式の FAERS Public Dashboard は主に件数ベースの記述統計に特化しており、再現可能な計算手順や PRR/ROR/IC などの不均衡指標は提供されません。
+- 本ツールはローカル完結・再現可能なパイプラインを提供し、手元の PC で柔軟にデータ取り込み～指標計算～可視化まで行えることを目的とします。
+- 研究・業務の仮説生成を支援する用途を想定しています（因果関係の証明を目的としません）。
+
 ## クイックスタート（Windows PowerShell 想定）
 
 ```
@@ -79,6 +85,9 @@ faers-signal ui --db data/faers.duckdb
 - 起動は `faers-signal ui --db data\faers.duckdb` が簡単。直接起動する場合は以下:
   - `streamlit run app/streamlit_app.py`（環境変数 `FAERS_DB` で DB を指定可）
 
+参考（しきい値の慣例）
+- 文献でよく用いられる基準の一例として、PRR≥2、χ²≥4、A≥3 などがあります。必要に応じてフィルタ（Min A 等）やエクスポート後の分析で調整してください。
+
 ### 開発者向け（テスト・Lint）
 
 - テスト: `pytest -q`
@@ -110,6 +119,11 @@ faers-signal ui --db data/faers.duckdb
   - まず `faers-signal etl --source demo --db data\faers.duckdb` を実行（スキーマ初期化）
 
 より詳しい説明は `docs/USAGE.md` と `docs/troubleshooting.md` を参照してください。
+
+## 重要な注意（FAERSデータの限界）
+- FAERS は自発報告に基づくデータであり、因果関係を示すものではありません。
+- 曝露人数（分母）が不明で、報告バイアスや重複の可能性があります。
+- 本ツールの出力は仮説生成の支援を目的としたもので、医療判断の唯一の根拠にはできません。
 
 ## 備考
 - スキーマは `src/faers_signal/schema.sql`、ABCD 集計は `src/faers_signal/abcd.sql`
