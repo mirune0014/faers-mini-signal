@@ -1,0 +1,3 @@
+# Exclude internal development memos from git archive/GitHub release archives
+READ.md export-ignore
+siyou.md export-ignore
