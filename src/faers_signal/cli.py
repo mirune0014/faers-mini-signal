@@ -24,8 +24,9 @@ def _ensure_db(db_path: Path) -> duckdb.DuckDBPyConnection:
 
 @app.command()
 def etl(
-    source: str = typer.Option("openfda", help="openfda|qfiles"),
+    source: str = typer.Option("openfda", help="openfda|qfiles|demo"),
     db: Path = typer.Option(Path("data/faers.duckdb"), help="DuckDB file path"),
+    input: Path | None = typer.Option(None, help="Path to openFDA JSON/ZIP or directory (for source=openfda)"),
     since: str | None = typer.Option(None, help="YYYY-MM-DD start date filter (optional)"),
     until: str | None = typer.Option(None, help="YYYY-MM-DD end date filter (optional)"),
     limit: int = typer.Option(0, help="Row limit for ingest (0 = no limit)"),
@@ -38,11 +39,15 @@ def etl(
     if source.lower() == "openfda":
         from .ingest_openfda import ingest_openfda
 
-        ingest_openfda(con, since=since, until=until, limit=limit)
+        ingest_openfda(con, input=input, since=since, until=until, limit=limit)
     elif source.lower() == "qfiles":
         from .ingest_qfiles import ingest_qfiles
 
-        ingest_qfiles(con, since=since, until=until, limit=limit)
+        ingest_qfiles(con, input=input, since=since, until=until, limit=limit)
+    elif source.lower() == "demo":
+        from .ingest_demo import ingest_demo
+
+        ingest_demo(con, reset=True)
     else:
         typer.echo("Unknown source. Use 'openfda' or 'qfiles'.", err=True)
         raise typer.Exit(code=2)
@@ -145,7 +150,28 @@ def ui(
 
     env = os.environ.copy()
     env["FAERS_DB"] = str(db)
-    script = Path(__file__).parents[1] / "app" / "streamlit_app.py"
+
+    # Locate the Streamlit script in both installed and editable layouts.
+    here = Path(__file__).resolve()
+    candidates = [
+        # Installed wheel: site-packages/app/streamlit_app.py (parents[1] == site-packages)
+        here.parents[1] / "app" / "streamlit_app.py",
+        # Editable src layout: repo_root/app/streamlit_app.py (parents[2] == repo root)
+        here.parents[2] / "app" / "streamlit_app.py",
+        # Fallback: current working directory
+        Path.cwd() / "app" / "streamlit_app.py",
+    ]
+
+    script = None
+    for c in candidates:
+        if c.exists():
+            script = c
+            break
+    if script is None:
+        tried = ", ".join(str(c) for c in candidates)
+        typer.echo(f"Could not locate Streamlit app. Tried: {tried}", err=True)
+        raise typer.Exit(code=2)
+
     subprocess.run([sys.executable, "-m", "streamlit", "run", str(script)], env=env, check=False)
 
 
