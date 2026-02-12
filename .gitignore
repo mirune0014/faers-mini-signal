@@ -14,3 +14,7 @@ data/*.csv
 # Tools
 .ruff_cache/
 
+# PyInstaller
+build/
+dist/
+*.spec.bak

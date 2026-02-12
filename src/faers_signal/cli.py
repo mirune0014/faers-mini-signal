@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-import importlib.resources as resources
 
 import duckdb
 import typer
 
 from . import __version__
+from . import _resources
 
 
 app = typer.Typer(help="FAERS mini signal: ETL, build metrics, export, and UI")
@@ -17,7 +17,7 @@ def _ensure_db(db_path: Path) -> duckdb.DuckDBPyConnection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(db_path))
     # Load packaged schema.sql
-    schema_sql = resources.files("faers_signal").joinpath("schema.sql").read_text(encoding="utf-8")
+    schema_sql = _resources.get_sql("schema.sql")
     con.execute(schema_sql)
     return con
 
@@ -63,7 +63,7 @@ def build(
     """Compute A/B/C/D and metrics (PRR/ROR/IC/chi-square) and write to Parquet/CSV."""
     con = _ensure_db(db)
     # Load packaged abcd.sql
-    sql = resources.files("faers_signal").joinpath("abcd.sql").read_text(encoding="utf-8")
+    sql = _resources.get_sql("abcd.sql")
     # Toggle suspect-only by adjusting a temp view
     if not suspect_only:
         # When not suspect-only, we treat all drugs as candidates (role in (1,2,3))
@@ -151,25 +151,10 @@ def ui(
     env = os.environ.copy()
     env["FAERS_DB"] = str(db)
 
-    # Locate the Streamlit script in both installed and editable layouts.
-    here = Path(__file__).resolve()
-    candidates = [
-        # Installed wheel: site-packages/app/streamlit_app.py (parents[1] == site-packages)
-        here.parents[1] / "app" / "streamlit_app.py",
-        # Editable src layout: repo_root/app/streamlit_app.py (parents[2] == repo root)
-        here.parents[2] / "app" / "streamlit_app.py",
-        # Fallback: current working directory
-        Path.cwd() / "app" / "streamlit_app.py",
-    ]
-
-    script = None
-    for c in candidates:
-        if c.exists():
-            script = c
-            break
-    if script is None:
-        tried = ", ".join(str(c) for c in candidates)
-        typer.echo(f"Could not locate Streamlit app. Tried: {tried}", err=True)
+    try:
+        script = _resources.get_streamlit_app()
+    except FileNotFoundError as e:
+        typer.echo(str(e), err=True)
         raise typer.Exit(code=2)
 
     subprocess.run([sys.executable, "-m", "streamlit", "run", str(script)], env=env, check=False)
