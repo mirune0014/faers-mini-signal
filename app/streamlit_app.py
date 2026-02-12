@@ -1,20 +1,26 @@
 import os
 import sys
 from pathlib import Path
-import importlib.resources as resources
 
 import duckdb
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-# Ensure `src/` is on sys.path when running the app directly from the repo.
-# This lets `from faers_signal import ...` work without an editable install.
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_SRC_DIR = _REPO_ROOT / "src"
-if str(_SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(_SRC_DIR))
+# Ensure source packages are importable in all environments:
+#   - PyInstaller bundle: sys._MEIPASS contains everything
+#   - Repo / editable install: add src/ to sys.path
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    _meipass = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    if str(_meipass) not in sys.path:
+        sys.path.insert(0, str(_meipass))
+else:
+    _REPO_ROOT = Path(__file__).resolve().parents[1]
+    _SRC_DIR = _REPO_ROOT / "src"
+    if str(_SRC_DIR) not in sys.path:
+        sys.path.insert(0, str(_SRC_DIR))
 
+from faers_signal import _resources
 from faers_signal.metrics import (
     ABCD,
     prr,
@@ -39,7 +45,7 @@ drug_filter = st.sidebar.text_input("Drug startswith", value="")
 pt_filter = st.sidebar.text_input("PT startswith", value="")
 
 con = duckdb.connect(str(db_path))
-sql = resources.files("faers_signal").joinpath("abcd.sql").read_text(encoding="utf-8")
+sql = _resources.get_sql("abcd.sql")
 if not suspect_only:
     sql = sql.replace("FROM drugs WHERE role = 1", "FROM drugs WHERE role in (1,2,3)")
 
@@ -51,6 +57,7 @@ if not df.empty:
     if pt_filter:
         df = df[df["pt"].str.startswith(pt_filter.lower())]
 
+if not df.empty:
     def _metrics_row(row: pd.Series):
         ab = ABCD(int(row.A), int(row.B), int(row.C), int(row.D), int(row.total_reports))
         prr_v = prr(ab)
@@ -72,7 +79,8 @@ if not df.empty:
             }
         )
 
-    mdf = df.join(df.apply(_metrics_row, axis=1))
+    metrics_df = df.apply(_metrics_row, axis=1)
+    mdf = pd.concat([df.reset_index(drop=True), metrics_df.reset_index(drop=True)], axis=1)
     mdf = mdf[mdf["A"] >= min_a]
 else:
     mdf = df
