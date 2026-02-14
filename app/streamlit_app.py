@@ -38,6 +38,15 @@ st.title("FAERS Mini Signal")
 
 db_path = Path(os.environ.get("FAERS_DB", "data/faers.duckdb"))
 
+# repo ルート基準でDBを選ぶ（Cloudデモは sample を優先）
+REPO_ROOT = Path(__file__).resolve().parents[1]
+default_db = REPO_ROOT / "data" / "sample.duckdb"
+if not default_db.exists():
+    default_db = REPO_ROOT / "data" / "faers.duckdb"
+
+db_path = Path(os.environ.get("FAERS_DB", str(default_db)))
+db_path.parent.mkdir(parents=True, exist_ok=True)
+
 # ── Sidebar: Filters ─────────────────────────────────────────────
 st.sidebar.header("フィルタ")
 st.sidebar.caption(f"DB: `{db_path.name}`")
@@ -95,6 +104,17 @@ if st.sidebar.button("🔄 openFDA から取得", use_container_width=True):
 
 # ── Main: Metrics table ──────────────────────────────────────────
 con = duckdb.connect(str(db_path))
+
+# ★重要：空DBでも落ちないようにスキーマを作る
+con.execute(_resources.get_sql("schema.sql"))
+
+# 先に件数チェック（0なら abcd.sql を走らせない）
+report_count = con.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
+if report_count == 0:
+    st.info("DBにデータがありません。左の「openFDA から取得」を実行するか、FAERS_DB で既存DBを指定してください。")
+    con.close()
+    st.stop()
+
 sql = _resources.get_sql("abcd.sql")
 if not suspect_only:
     sql = sql.replace("FROM drugs WHERE role = 1", "FROM drugs WHERE role in (1,2,3)")
@@ -102,7 +122,6 @@ if not suspect_only:
 df = con.execute(sql).fetch_df()
 
 # Show DB stats
-report_count = con.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
 drug_count = con.execute("SELECT COUNT(DISTINCT drug_name) FROM drugs").fetchone()[0]
 pt_count = con.execute("SELECT COUNT(DISTINCT meddra_pt) FROM reactions").fetchone()[0]
 con.close()
