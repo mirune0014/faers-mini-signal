@@ -22,7 +22,7 @@ DuckDB と Streamlit を使って FAERS（FDA Adverse Event Reporting System）�
 
 以下の URL でデモを確認できます（サンプルデータ 5,000 件で動作）:
 
-> デプロイ URL をここに記載してください
+> https://faers-mini-signal.streamlit.app
 
 ## ローカルで使う
 
