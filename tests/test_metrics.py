@@ -25,11 +25,36 @@ def test_metrics_basic_values():
 
 
 def test_metrics_zero_handling():
+    """With Haldane–Anscombe correction, zero cells produce finite values."""
     ab = ABCD(A=0, B=5, C=20, D=100, N=125)
-    assert math.isnan(prr(ab))
-    assert math.isnan(ror(ab))
+
+    # Haldane adds +0.5 to all cells → A=0.5, B=5.5, C=20.5, D=100.5
+    # PRR should be finite and < 1 (rare event with this drug)
+    p = prr(ab)
+    assert not math.isnan(p)
+    assert p < 1.0  # A=0 means under-reported
+
+    # ROR should be finite and < 1
+    r = ror(ab)
+    assert not math.isnan(r)
+    assert r < 1.0
+
+    # CI should be finite with lo < hi
     lo, hi = ror_ci95(ab)
-    assert math.isnan(lo) and math.isnan(hi)
+    assert not math.isnan(lo) and not math.isnan(hi)
+    assert lo < hi
+
+    # IC should be finite and negative (under-reported)
     ic = ic_simple(ab)
-    assert math.isnan(ic)
+    assert not math.isnan(ic)
+    assert ic < 0
+
+
+def test_metrics_all_zeros():
+    """Edge case: all cells zero should still produce finite values."""
+    ab = ABCD(A=0, B=0, C=0, D=0, N=0)
+    # After Haldane: A=B=C=D=0.5, N=2 → perfectly balanced → PRR ≈ 1
+    p = prr(ab)
+    assert not math.isnan(p)
+    assert math.isclose(p, 1.0, rel_tol=0.01)
 
