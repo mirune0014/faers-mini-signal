@@ -146,16 +146,27 @@ if not df.empty:
         ror_l, ror_u = ror_ci95(ab)
         ic_v = ic_simple(ab)
         ic_l, ic_u = ic_simple_ci95(ab)
+
+        # Signal detection criteria
+        evans = (prr_v >= 2) and (chi >= 4) and (int(row.A) >= 3)
+        ror_sig = ror_l > 1 if not (np.isnan(ror_l)) else False
+        ic_sig = ic_l > 0 if not (np.isnan(ic_l)) else False
+        signal = evans or ror_sig or ic_sig
+
         return pd.Series(
             {
-                "PRR": prr_v,
-                "Chi2_1df": chi,
-                "ROR": ror_v,
-                "ROR_CI_L": ror_l,
-                "ROR_CI_U": ror_u,
-                "IC": ic_v,
-                "IC_CI_L": ic_l,
-                "IC_CI_U": ic_u,
+                "PRR": round(prr_v, 2) if not np.isnan(prr_v) else np.nan,
+                "Chi2": round(chi, 2) if not np.isnan(chi) else np.nan,
+                "ROR": round(ror_v, 2) if not np.isnan(ror_v) else np.nan,
+                "ROR_lo": round(ror_l, 2) if not np.isnan(ror_l) else np.nan,
+                "ROR_hi": round(ror_u, 2) if not np.isnan(ror_u) else np.nan,
+                "IC": round(ic_v, 3) if not np.isnan(ic_v) else np.nan,
+                "IC_lo": round(ic_l, 3) if not np.isnan(ic_l) else np.nan,
+                "IC_hi": round(ic_u, 3) if not np.isnan(ic_u) else np.nan,
+                "Evans": evans,
+                "ROR_sig": ror_sig,
+                "IC_sig": ic_sig,
+                "Signal": "⚠️" if signal else "",
             }
         )
 
@@ -165,8 +176,130 @@ if not df.empty:
 else:
     mdf = df
 
+# ── Signal filter toggle ─────────────────────────────────────────
 st.subheader("シグナル検出結果")
-st.dataframe(mdf, use_container_width=True)
+
+if not mdf.empty and "Signal" in mdf.columns:
+    signal_only = st.checkbox("⚠️ シグナル検出のみ表示", value=False)
+    if signal_only:
+        mdf = mdf[mdf["Signal"] == "⚠️"]
+
+    sig_count = (mdf["Signal"] == "⚠️").sum()
+    st.caption(f"表示行数: {len(mdf):,}  |  シグナル検出: {sig_count:,} 件")
+
+# ── Color-coded table ────────────────────────────────────────────
+def _highlight_signal(row):
+    if row.get("Signal") == "⚠️":
+        return ["background-color: rgba(255, 200, 200, 0.3)"] * len(row)
+    return [""] * len(row)
+
+if not mdf.empty:
+    styled = mdf.style.apply(_highlight_signal, axis=1).format(
+        {c: "{:.2f}" for c in ["PRR", "Chi2", "ROR", "ROR_lo", "ROR_hi"]
+         if c in mdf.columns},
+        na_rep="—",
+    )
+    st.dataframe(styled, use_container_width=True)
+else:
+    st.dataframe(mdf, use_container_width=True)
 
 csv = mdf.to_csv(index=False).encode("utf-8") if not mdf.empty else b""
 st.download_button("📄 CSV ダウンロード", data=csv, file_name="metrics.csv", mime="text/csv")
+
+# ── Visualization ────────────────────────────────────────────────
+if not mdf.empty and "PRR" in mdf.columns:
+    import altair as alt
+    from scipy.stats import chi2 as _chi2_dist
+
+    st.subheader("📊 可視化")
+    chart_type = st.selectbox(
+        "グラフ種類",
+        ["Volcano Plot", "バブルチャート", "ヒートマップ"],
+    )
+
+    # Prepare viz dataframe (drop NaN rows for charting)
+    vdf = mdf.dropna(subset=["PRR", "Chi2"]).copy()
+    if vdf.empty:
+        st.warning("可視化に必要なデータがありません。")
+    else:
+        vdf["log2_PRR"] = np.log2(vdf["PRR"].replace(0, np.nan))
+        vdf["neg_log10_pval"] = vdf["Chi2"].apply(
+            lambda x: -np.log10(max(1e-300, 1 - _chi2_dist.cdf(x, 1)))
+            if not np.isnan(x) and x > 0 else 0
+        )
+        vdf["label"] = vdf["drug"] + " + " + vdf["pt"]
+
+        if chart_type == "Volcano Plot":
+            volcano = (
+                alt.Chart(vdf)
+                .mark_circle(size=60, opacity=0.7)
+                .encode(
+                    x=alt.X("log2_PRR:Q", title="log₂(PRR)"),
+                    y=alt.Y("neg_log10_pval:Q", title="-log₁₀(p-value)"),
+                    color=alt.condition(
+                        alt.datum.Signal == "⚠️",
+                        alt.value("#e74c3c"),
+                        alt.value("#95a5a6"),
+                    ),
+                    tooltip=["label", "A", "PRR", "ROR", "IC", "Signal"],
+                )
+                .properties(width="container", height=450)
+                .interactive()
+            )
+            # Threshold lines
+            prr_line = alt.Chart(pd.DataFrame({"x": [1.0]})).mark_rule(
+                strokeDash=[4, 4], color="orange"
+            ).encode(x="x:Q")
+            pval_line = alt.Chart(pd.DataFrame({"y": [-np.log10(0.05)]})).mark_rule(
+                strokeDash=[4, 4], color="orange"
+            ).encode(y="y:Q")
+
+            st.altair_chart(volcano + prr_line + pval_line, use_container_width=True)
+            st.caption("オレンジ線: PRR=2 (縦), p=0.05 (横)。赤点=シグナル検出")
+
+        elif chart_type == "バブルチャート":
+            top_drugs = vdf.groupby("drug")["A"].sum().nlargest(20).index.tolist()
+            bdf = vdf[vdf["drug"].isin(top_drugs)]
+
+            bubble = (
+                alt.Chart(bdf)
+                .mark_circle(opacity=0.7)
+                .encode(
+                    x=alt.X("drug:N", title="薬剤名", sort="-y"),
+                    y=alt.Y("PRR:Q", title="PRR"),
+                    size=alt.Size("A:Q", title="報告件数A", scale=alt.Scale(range=[30, 500])),
+                    color=alt.condition(
+                        alt.datum.Signal == "⚠️",
+                        alt.value("#e74c3c"),
+                        alt.value("#3498db"),
+                    ),
+                    tooltip=["drug", "pt", "A", "PRR", "ROR", "IC", "Signal"],
+                )
+                .properties(width="container", height=450)
+            )
+            st.altair_chart(bubble, use_container_width=True)
+            st.caption("上位20薬剤を表示。バブルサイズ=報告件数A、赤=シグナル検出")
+
+        elif chart_type == "ヒートマップ":
+            top_drugs = vdf.groupby("drug")["A"].sum().nlargest(15).index.tolist()
+            top_pts = vdf.groupby("pt")["A"].sum().nlargest(15).index.tolist()
+            hdf = vdf[(vdf["drug"].isin(top_drugs)) & (vdf["pt"].isin(top_pts))]
+
+            heatmap = (
+                alt.Chart(hdf)
+                .mark_rect()
+                .encode(
+                    x=alt.X("pt:N", title="副作用PT"),
+                    y=alt.Y("drug:N", title="薬剤名"),
+                    color=alt.Color(
+                        "PRR:Q",
+                        title="PRR",
+                        scale=alt.Scale(scheme="reds", domainMin=0),
+                    ),
+                    tooltip=["drug", "pt", "A", "PRR", "ROR", "IC", "Signal"],
+                )
+                .properties(width="container", height=450)
+            )
+            st.altair_chart(heatmap, use_container_width=True)
+            st.caption("上位15薬剤×15 PTのPRRヒートマップ")
+
