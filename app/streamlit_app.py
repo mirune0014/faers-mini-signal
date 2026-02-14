@@ -209,6 +209,7 @@ st.download_button("📄 CSV ダウンロード", data=csv, file_name="metrics.c
 # ── Visualization ────────────────────────────────────────────────
 if not mdf.empty and "PRR" in mdf.columns:
     import altair as alt
+    from scipy.stats import chi2 as _chi2_dist
 
     st.subheader("📊 可視化")
     chart_type = st.selectbox(
@@ -223,7 +224,7 @@ if not mdf.empty and "PRR" in mdf.columns:
     else:
         vdf["log2_PRR"] = np.log2(vdf["PRR"].replace(0, np.nan))
         vdf["neg_log10_pval"] = vdf["Chi2"].apply(
-            lambda x: -np.log10(max(1e-300, 1 - __import__("scipy").stats.chi2.cdf(x, 1)))
+            lambda x: -np.log10(max(1e-300, 1 - _chi2_dist.cdf(x, 1)))
             if not np.isnan(x) and x > 0 else 0
         )
         vdf["label"] = vdf["drug"] + " + " + vdf["pt"]
