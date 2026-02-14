@@ -28,11 +28,10 @@ def _get_data_dir() -> Path:
 
 
 def _init_demo_db(db_path: Path) -> None:
-    """If the DB does not exist, initialise schema and seed demo data."""
+    """If the DB does not exist, initialise from sample.duckdb or seed demo data."""
     if db_path.exists():
         return
 
-    print(f"Initialising demo database at {db_path} ...")
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     base = _get_base_dir()
@@ -42,6 +41,21 @@ def _init_demo_db(db_path: Path) -> None:
     if src_dir.exists() and str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
 
+    # Try to copy the bundled sample DB (real FAERS data)
+    import shutil
+    sample_candidates = [
+        base / "data" / "sample.duckdb",
+        Path(__file__).resolve().parent / "data" / "sample.duckdb",
+    ]
+    for sample in sample_candidates:
+        if sample.exists():
+            print(f"Copying sample database from {sample} ...")
+            shutil.copy2(str(sample), str(db_path))
+            print("Sample database ready.")
+            return
+
+    # Fallback: create minimal demo data
+    print(f"Initialising demo database at {db_path} ...")
     import duckdb
     from faers_signal._resources import get_sql
     from faers_signal.ingest_demo import ingest_demo
