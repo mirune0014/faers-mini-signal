@@ -23,3 +23,10 @@ dist/
 # Temp files
 error_log.txt
 commit_comments.md
+
+# Development memos / agent config (not for public repo)
+AGENTS.md
+READ.md
+siyou.md
+docs/IMPROVEMENTS.md
+docs/troubleshooting.md
