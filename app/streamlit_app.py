@@ -211,21 +211,25 @@ if not mdf.empty and "PRR" in mdf.columns:
     import altair as alt
     from scipy.stats import chi2 as _chi2_dist
 
-    st.subheader("📊 可視化")
+    st.subheader("📊 可視化（仮設）")
+    st.caption("⚠️ この可視化は仮実装です。グラフの種類や表示方法は今後改善予定です。")
     chart_type = st.selectbox(
         "グラフ種類",
         ["Volcano Plot", "バブルチャート", "ヒートマップ"],
     )
 
-    # Prepare viz dataframe (drop NaN rows for charting)
+    # Prepare viz dataframe (drop NaN/inf rows for charting)
     vdf = mdf.dropna(subset=["PRR", "Chi2"]).copy()
+    # Guard: remove infinite or extreme values that distort charts
+    vdf = vdf[np.isfinite(vdf["PRR"]) & np.isfinite(vdf["Chi2"])]
+    vdf = vdf[(vdf["PRR"] > 0) & (vdf["PRR"] < 1e6)]  # remove extreme outliers
     if vdf.empty:
         st.warning("可視化に必要なデータがありません。")
     else:
-        vdf["log2_PRR"] = np.log2(vdf["PRR"].replace(0, np.nan))
+        vdf["log2_PRR"] = np.log2(vdf["PRR"].clip(lower=1e-10))
         vdf["neg_log10_pval"] = vdf["Chi2"].apply(
             lambda x: -np.log10(max(1e-300, 1 - _chi2_dist.cdf(x, 1)))
-            if not np.isnan(x) and x > 0 else 0
+            if np.isfinite(x) and x > 0 else 0
         )
         vdf["label"] = vdf["drug"] + " + " + vdf["pt"]
 
