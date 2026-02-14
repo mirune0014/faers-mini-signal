@@ -19,3 +19,7 @@ data/*.csv
 build/
 dist/
 *.spec.bak
+
+# Temp files
+error_log.txt
+commit_comments.md
