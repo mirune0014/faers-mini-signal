@@ -111,3 +111,55 @@ def ic_simple_ci95(abcd: ABCD) -> Tuple[float, float]:
     lo = ic - 1.96 * se_ic
     hi = ic + 1.96 * se_ic
     return (lo, hi)
+
+
+# ── Signal detection modes ───────────────────────────────────────
+
+def signal_flags(abcd: ABCD, min_a: int = 3) -> dict:
+    """Compute individual signal flags for a (drug, PT) pair.
+
+    Returns a dict with keys:
+      flag_evans  – Evans 3 criteria: PRR≥2 AND χ²≥4 AND A≥min_a
+      flag_ror025 – ROR lower 95%CI > 1
+      flag_ic025  – IC lower 95%CI > 0
+    """
+    prr_v = prr(abcd)
+    chi_v = chi_square_1df(abcd)
+    ror_l, _ = ror_ci95(abcd)
+    ic_l, _ = ic_simple_ci95(abcd)
+
+    evans = (
+        (not np.isnan(prr_v)) and prr_v >= 2
+        and (not np.isnan(chi_v)) and chi_v >= 4
+        and abcd.A >= min_a
+    )
+    ror025 = (not np.isnan(ror_l)) and ror_l > 1
+    ic025 = (not np.isnan(ic_l)) and ic_l > 0
+
+    return {
+        "flag_evans": bool(evans),
+        "flag_ror025": bool(ror025),
+        "flag_ic025": bool(ic025),
+    }
+
+
+def classify_signal(flags: dict, mode: str = "balanced") -> bool:
+    """Apply a signal-detection mode to the individual flags.
+
+    Modes:
+      sensitive – any one flag is True  (high recall, low precision)
+      balanced  – at least 2 of 3 flags (recommended)
+      specific  – all three flags       (high precision, low recall)
+    """
+    f_evans = flags.get("flag_evans", False)
+    f_ror025 = flags.get("flag_ror025", False)
+    f_ic025 = flags.get("flag_ic025", False)
+    true_count = sum([f_evans, f_ror025, f_ic025])
+
+    if mode == "sensitive":
+        return true_count >= 1
+    elif mode == "specific":
+        return true_count == 3
+    else:  # balanced (default)
+        return true_count >= 2
+
