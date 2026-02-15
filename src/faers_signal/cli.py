@@ -58,6 +58,7 @@ def build(
     db: Path = typer.Option(Path("data/faers.duckdb"), help="DuckDB file path"),
     suspect_only: bool = typer.Option(True, help="Use role=1 suspect drugs only"),
     min_a: int = typer.Option(3, help="Minimum A count to keep"),
+    signal_mode: str = typer.Option("balanced", help="Signal mode: sensitive|balanced|specific"),
     out: Path = typer.Option(Path("data/metrics.parquet"), help="Output Parquet/CSV path"),
 ):
     """Compute A/B/C/D and metrics (PRR/ROR/IC/chi-square) and write to Parquet/CSV."""
@@ -78,7 +79,10 @@ def build(
         ror_ci95,
         ic_simple,
         ic_simple_ci95,
+        signal_flags,
+        classify_signal,
     )
+    from .analysis_spec import AnalysisSpec, Manifest
     import numpy as np
     import pandas as pd
 
@@ -90,6 +94,10 @@ def build(
         ror_l, ror_u = ror_ci95(ab)
         ic_v = ic_simple(ab)
         ic_l, ic_u = ic_simple_ci95(ab)
+
+        flags = signal_flags(ab, min_a=min_a)
+        is_signal = classify_signal(flags, mode=signal_mode)
+
         return pd.Series(
             {
                 "PRR": prr_v,
@@ -100,6 +108,10 @@ def build(
                 "IC": ic_v,
                 "IC_CI_L": ic_l,
                 "IC_CI_U": ic_u,
+                "flag_evans": flags["flag_evans"],
+                "flag_ror025": flags["flag_ror025"],
+                "flag_ic025": flags["flag_ic025"],
+                "Signal": is_signal,
             }
         )
 
@@ -115,6 +127,22 @@ def build(
     else:
         mdf.to_parquet(out, index=False)
     typer.echo(f"Wrote metrics to {out}")
+
+    # Write manifest
+    spec = AnalysisSpec(
+        suspect_only=suspect_only,
+        min_a=min_a,
+        signal_mode=signal_mode,
+    )
+    manifest = Manifest(spec=spec)
+    manifest.populate_env()
+    manifest.populate_db_stats(con)
+    manifest.total_pairs = len(mdf)
+    manifest.signal_count = int(mdf["Signal"].sum()) if not mdf.empty else 0
+
+    manifest_path = out.with_suffix(".manifest.json")
+    manifest.save(manifest_path)
+    typer.echo(f"Wrote manifest to {manifest_path}")
 
 
 @app.command()
