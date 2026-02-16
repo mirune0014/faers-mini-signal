@@ -24,66 +24,143 @@ DuckDB と Streamlit を使って FAERS（FDA Adverse Event Reporting System）�
 
 > https://faers-mini-signal.streamlit.app
 
-## ローカルで使う
+## はじめ方
+
+### 前提条件
+
+- Python 3.11+
+- Windows PowerShell / macOS / Linux のいずれかのシェル
 
 ### セットアップ
 
 ```bash
-# 仮想環境を作成（Python 3.11+）
+# 仮想環境を作成
 python -m venv .venv
-# Windows PowerShell
+
+# 仮想環境を有効化
+# Windows PowerShell の場合
 .\.venv\Scripts\Activate.ps1
-# macOS/Linux
+# macOS/Linux の場合
 source .venv/bin/activate
 
 # 依存関係をインストール
 pip install -e .[dev]
+
+# テストを実行（オプション）
+pytest -q
 ```
 
-### データ取り込み
+## データ取り込み
 
-**方法1: デモデータ（最短動作確認）**
+### 方法1: デモデータ（最も簡単）
+
+デモデータを使用して、すぐに試すことができます：
+
 ```bash
 faers-signal etl --source demo --db data/faers.duckdb
 ```
 
-**方法2: openFDA ローカルファイル**
+### 方法2: openFDA ローカルファイル
+
+openFDA から手動でダウンロードした JSON/NDJSON/ZIP ファイルを取り込めます。
+
+**サポートされる入力形式**：
+- ファイル: `.json`, `.jsonl`, `.ndjson`（`.gz` 圧縮も可）
+- アーカイブ: `.zip`（上記を内包）
+- ディレクトリ: 再帰的に処理
+
+**取り込みコマンド**：
+
 ```bash
-# ZIP/JSON/NDJSON に対応
-faers-signal etl --source openfda --input "path/to/drug-event.json.zip" --db data/faers.duckdb
-# 期間で絞る場合
-faers-signal etl --source openfda --input "path/to/events" --db data/faers.duckdb --since 2024-01-01 --until 2024-12-31
+faers-signal etl --source openfda --input path/to/openfda_events.zip --db data/faers.duckdb
 ```
 
-**方法3: FAERS 四半期ファイル（DEMO/DRUG/REAC）**
+**オプション**：
+- `--since YYYY-MM-DD` / `--until YYYY-MM-DD`: `receivedate` でフィルタリング
+- `--limit N`: 取り込む最大レポート数（`0` で無制限）
+
+例：
 ```bash
-faers-signal etl --source qfiles --input "path/to/faers_qfiles.zip" --db data/faers.duckdb
+faers-signal etl --source openfda --input path/to/events.zip --db data/faers.duckdb --since 2024-01-01 --until 2024-12-31 --limit 0
 ```
 
-**方法4: UI から openFDA API 経由で取得**
-UI のサイドバー「📥 openFDA データ取得」セクションから、薬剤名・期間を指定してデータをダウンロードできます。
+**注意**:
+- 取り込みは `safetyreportid` 単位で冪等です（同じ ID を再度取り込むと上書きされます）
 
-### UI の起動
+### 方法3: FAERS 四半期ファイル
+
+DEMO / DRUG / REAC テーブルを含む四半期ファイルからの取り込みに対応しています。
+
+**必須カラム（大文字小文字問わず）**：
+- DEMO: `PRIMARYID`, `FDA_DT` (YYYYMMDD 形式)
+- DRUG: `PRIMARYID`, `DRUGNAME`, `ROLE_COD` (PS/SS/C/I)
+- REAC: `PRIMARYID`, `PT`
+
+**取り込みコマンド**：
+
+```bash
+faers-signal etl --source qfiles --input path/to/faers_qfiles.zip --db data/faers.duckdb --since 2024-01-01 --until 2024-12-31
+```
+
+**注意**:
+- `ROLE_COD` は PS/SS→1（被疑薬）、C→2（併用薬）、I→3（相互作用薬）にマッピングされます
+
+### 方法4: UI から openFDA API 経由で取得
+
+UI を起動した後、サイドバーの「📥 openFDA データ取得」セクションから、薬剤名と期間を指定してデータを直接ダウンロード・取り込みできます。
+
+## UI の起動と使い方
+
+### UI を起動
 
 ```bash
 faers-signal ui --db data/faers.duckdb
-# または直接起動
+```
+
+または直接 Streamlit で起動：
+
+```bash
 streamlit run app/streamlit_app.py
 ```
 
-### UI の使い方
+### UI の機能
 
-- **フィルタ**（サイドバー）: 被疑薬のみ / 最小A件数 / 薬剤名・PT の前方一致
-- **シグナル判定テーブル**: ABCD と各指標を表示。⚠️ マーク行がシグナル検出。「シグナル検出のみ表示」で絞り込み可能
-- **可視化（仮設）**: Volcano Plot / バブルチャート / ヒートマップを選択式で表示
+- **サイドバーフィルタ**:
+  - 被疑薬のみ: 被疑薬（role=1）のみで集計
+  - 最小 A 件数: A（薬と副作用の共起数）の下限値
+  - 薬剤名 / PT 前方一致: 名前でフィルタリング
+
+- **シグナル判定テーブル**: 
+  - ABCD 分割表の値を表示
+  - 各指標（PRR、ROR±CI、IC±CI、χ²）を表示
+  - ⚠️ マーク: シグナル検出済み行
+  - 「シグナル検出のみ表示」で絞り込み可能
+
+- **可視化（仮設）**: 
+  - Volcano Plot: X=log2(PRR) vs Y=IC下限CI、シグナルを右肩に表示
+  - バブルチャート: 薬剤ごとに副作用を可視化
+  - ヒートマップ: 薬剤×副作用のマトリクス表示（色=IC下限CI）
+
 - **CSV ダウンロード**: テーブルデータを CSV で出力
 
-### 指標計算・ファイル出力（CLI）
+## メトリクスの出力
+
+### Parquet / CSV へエクスポート
 
 ```bash
-# Parquet / CSV へエクスポート
 faers-signal build --db data/faers.duckdb --out data/metrics.parquet
-# 任意の SQL 結果をエクスポート
+```
+
+出力ファイルの拡張子で自動切り替え（`.parquet` または `.csv`）
+
+**オプション**:
+- `--suspect-only` / `--no-suspect-only`: 被疑薬のみ集計（デフォルト: --suspect-only）
+- `--min-a N`: A 件数が N 以上の行のみ（デフォルト: 3）
+- `--signal-mode {sensitive|balanced|specific}`: シグナル判定モード（デフォルト: balanced）
+
+### 任意の SQL クエリをエクスポート
+
+```bash
 faers-signal export --db data/faers.duckdb --sql "SELECT * FROM reports LIMIT 10" --out data/export.csv
 ```
 
@@ -92,12 +169,14 @@ faers-signal export --db data/faers.duckdb --sql "SELECT * FROM reports LIMIT 10
 Python 環境がなくても利用できるスタンドアロン exe 版があります。
 
 - `FaersMiniSignal.exe` をダブルクリックするだけで起動します
-- サンプルデータ（5,000 件）が同梱されており、すぐに分析を開始できます
+- サンプルデータ（5,000 件）が同梱されており、セットアップ直後から分析を開始できます
 - 起動後、ブラウザで Streamlit UI が自動的に開きます
 
-入手方法は Releases ページを確認してください。
+**入手方法**: Releases ページから `FaersMiniSignal-v*.zip` をダウンロードしてください。
 
 ## 指標と判定基準
+
+### 計算式
 
 | 指標 | 式 | シグナル基準 |
 |------|-----|------------|
@@ -106,30 +185,43 @@ Python 環境がなくても利用できるスタンドアロン exe 版があ�
 | ROR | (A×D) / (B×C) | 下限95%CI > 1 |
 | IC | log₂(A / E_A) | 下限95%CI > 0 |
 
+### シグナル判定
+
 **Evans 3 条件**: PRR ≥ 2 かつ χ² ≥ 4 かつ A ≥ 3 を同時に満たす場合にシグナルと判定。
 
-**ゼロセル補正**: A, B, C, D のいずれかが 0 の場合、Haldane–Anscombe 補正として全セルに +0.5 を加算します（Haldane, 1956）。
+**ゼロセル補正**: A, B, C, D のいずれかが 0 の場合、Haldane–Anscombe 補正として全セルに +0.5 を加算します（Haldane, 1956）。これにより、ゼロセル時でも有限で安定した指標値を返すことができます。
 
 ## プロジェクト構成
 
 ```
-src/faers_signal/     # メインパッケージ
-├── cli.py            # CLI エントリポイント
-├── metrics.py        # PRR/ROR/IC/χ² 計算
-├── ingest_demo.py    # デモデータ取り込み
-├── ingest_openfda.py # openFDA ローカルファイル取り込み
-├── ingest_qfiles.py  # 四半期ファイル取り込み
-├── download_openfda.py # openFDA API 経由データ取得
-├── _resources.py     # SQL/リソース読み込み
-├── schema.sql        # DuckDB スキーマ定義
-└── abcd.sql          # ABCD 分割表集計クエリ
+src/faers_signal/         # メインパッケージ
+├── cli.py                # CLI エントリポイント
+├── metrics.py            # PRR/ROR/IC/χ² 計算
+├── analysis_spec.py      # 解析仕様・実行記録
+├── ingest_demo.py        # デモデータ取り込み
+├── ingest_openfda.py     # openFDA ローカルファイル取り込み
+├── ingest_qfiles.py      # 四半期ファイル取り込み
+├── download_openfda.py   # openFDA API 経由データ取得
+├── normalize_drug.py     # 薬剤名正規化（RxNorm）
+├── _resources.py         # SQL/リソース読み込み
+├── schema.sql            # DuckDB スキーマ定義
+└── abcd.sql              # ABCD 分割表集計クエリ
 app/
-└── streamlit_app.py  # Streamlit UI
+└── streamlit_app.py      # Streamlit UI
 scripts/
-└── seed_sample_db.py # サンプルDB生成スクリプト
-tests/                # pytest テスト
-docs/                 # 仕様書・将来設計ノート
+└── seed_sample_db.py     # サンプルDB生成スクリプト
+tests/                    # pytest テスト
+docs/                     # ドキュメント
 ```
+
+## ドキュメント
+
+詳細については以下を参照してください：
+
+- **[SPEC.md](docs/SPEC.md)**: データモデル、取込仕様、メトリクス定義、CLI オプション
+- **[METHOD.md](docs/METHOD.md)**: 統計的手法と計算式の背景
+- **[REPO_SUMMARY_JA.md](docs/REPO_SUMMARY_JA.md)**: リポジトリの日本語サマリ
+- **[FUTURE_DESIGN.md](docs/FUTURE_DESIGN.md)**: 将来の拡張計画（時系列分析、患者背景、etc）
 
 ## 重要な注意（FAERS データの限界）
 
