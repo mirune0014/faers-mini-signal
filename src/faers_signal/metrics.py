@@ -10,6 +10,17 @@ log(0) while introducing minimal bias.
 Reference:
   Haldane JBS (1956). "The estimation and significance of the logarithm
   of a ratio of frequencies."  Ann Hum Genet 20(4):309–311.
+
+Multi-testing correction
+------------------------
+For exploratory Volcano Plots, Benjamini-Hochberg FDR control computes
+q-values from p-values, controlling the expected proportion of false
+discoveries at a specified level (typically 0.05).
+
+Reference:
+  Benjamini Y, Hochberg Y (1995). "Controlling the false discovery rate:
+  a practical and powerful approach to multiple testing."
+  J R Stat Soc Series B 57(1):289–300.
 """
 from __future__ import annotations
 
@@ -17,6 +28,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 import numpy as np
+from scipy.stats import chi2
 
 
 _HALDANE = 0.5  # Haldane–Anscombe correction constant
@@ -162,4 +174,62 @@ def classify_signal(flags: dict, mode: str = "balanced") -> bool:
         return true_count == 3
     else:  # balanced (default)
         return true_count >= 2
+
+
+# ── Multiple testing correction ──────────────────────────────────
+
+def benjamini_hochberg_fdr(p_values: list[float], alpha: float = 0.05) -> list[float]:
+    """Compute q-values (FDR-adjusted p-values) via Benjamini-Hochberg procedure.
+
+    Args:
+        p_values: List of p-values (e.g., from chi-square tests)
+        alpha: FDR level (default 0.05)
+
+    Returns:
+        List of q-values in the same order as input p_values
+    """
+    n = len(p_values)
+    if n == 0:
+        return []
+
+    p_array = np.asarray(p_values, dtype=float)
+    # Guard against NaN/inf/out-of-range values
+    p_array = np.where(np.isfinite(p_array), np.clip(p_array, 0.0, 1.0), 1.0)
+    order = np.argsort(p_array)
+    p_sorted = p_array[order]
+
+    # Compute adjusted values: min(p[i] * n / (i+1), 1)
+    q_sorted = np.minimum(p_sorted * n / np.arange(1, n + 1), 1.0)
+
+    # Enforce monotonicity from right to left
+    q_sorted_mono = np.zeros(n)
+    q_sorted_mono[-1] = q_sorted[-1]
+    for i in range(n - 2, -1, -1):
+        q_sorted_mono[i] = min(q_sorted[i], q_sorted_mono[i + 1])
+
+    # Reorder back to original order
+    q_values = np.empty(n)
+    q_values[order] = q_sorted_mono
+
+    return q_values.tolist()
+
+
+def chi_square_p_value(value: ABCD | float) -> float:
+    """Compute a right-tail p-value for chi-square (1 df).
+
+    Args:
+        value: Either an ``ABCD`` table (Yates-corrected statistic is computed)
+               or a precomputed chi-square statistic.
+
+    Returns:
+        Right-tail p-value (probability of a more extreme statistic under H0).
+    """
+    if isinstance(value, ABCD):
+        chi_sq = chi_square_1df(value)
+    else:
+        chi_sq = float(value)
+
+    if np.isnan(chi_sq):
+        return np.nan
+    return float(chi2.sf(chi_sq, df=1))
 

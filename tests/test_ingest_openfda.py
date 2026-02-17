@@ -1,5 +1,4 @@
 from pathlib import Path
-import io
 import json
 import zipfile
 
@@ -17,8 +16,16 @@ def _make_openfda_zip(path: Path) -> Path:
                 "primarysource": {"qualifier": 1},
                 "patient": {
                     "drug": [
-                        {"medicinalproduct": "Aspirin", "drugcharacterization": 1},
-                        {"medicinalproduct": "Metformin", "drugcharacterization": 2},
+                        {
+                            "medicinalproduct": "Aspirin",
+                            "drugcharacterization": 1,
+                            "openfda": {"substance_name": ["Aspirin"]},
+                        },
+                        {
+                            "medicinalproduct": "Metformin",
+                            "drugcharacterization": 2,
+                            "openfda": {"substance_name": ["Metformin"]},
+                        },
                     ],
                     "reaction": [
                         {"reactionmeddrapt": "nausea"}
@@ -31,7 +38,11 @@ def _make_openfda_zip(path: Path) -> Path:
                 "primarysource": {"qualifier": 1},
                 "patient": {
                     "drug": [
-                        {"medicinalproduct": "Ibuprofen", "drugcharacterization": 1}
+                        {
+                            "medicinalproduct": "Ibuprofen",
+                            "drugcharacterization": 1,
+                            "openfda": {"substance_name": ["Ibuprofen"]},
+                        }
                     ],
                     "reaction": [
                         {"reactionmeddrapt": "headache"}
@@ -50,14 +61,9 @@ def test_openfda_zip_ingest_and_abcd(tmp_path: Path):
     db = tmp_path / "openfda.duckdb"
     con = duckdb.connect(str(db))
 
-    # Create schema
-    con.execute(
-        """
-        CREATE TABLE reports(safetyreportid VARCHAR PRIMARY KEY, receivedate DATE, primarysource_qualifier INTEGER);
-        CREATE TABLE drugs(safetyreportid VARCHAR, drug_name VARCHAR, role INTEGER);
-        CREATE TABLE reactions(safetyreportid VARCHAR, meddra_pt VARCHAR);
-        """
-    )
+    # Create schema from packaged definition
+    schema_sql = (Path(__file__).parents[1] / "src" / "faers_signal" / "schema.sql").read_text(encoding="utf-8")
+    con.execute(schema_sql)
 
     zip_path = _make_openfda_zip(tmp_path / "openfda_events.zip")
     ingest_openfda(con, input=zip_path, since=None, until=None, limit=0)
@@ -79,4 +85,3 @@ def test_openfda_zip_ingest_and_abcd(tmp_path: Path):
     df2 = con.execute(sql).fetch_df()
     row2 = df2[(df2["drug"].str.lower() == "aspirin") & (df2["pt"].str.lower() == "nausea")]
     assert int(row2.iloc[0].A) == 1
-
