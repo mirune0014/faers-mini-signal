@@ -1,6 +1,16 @@
 import math
 
-from faers_signal.metrics import ABCD, prr, chi_square_1df, ror, ror_ci95, ic_simple, ic_simple_ci95
+from faers_signal.metrics import (
+    ABCD,
+    benjamini_hochberg_fdr,
+    chi_square_1df,
+    chi_square_p_value,
+    ic_simple,
+    ic_simple_ci95,
+    prr,
+    ror,
+    ror_ci95,
+)
 
 
 def test_metrics_basic_values():
@@ -57,4 +67,30 @@ def test_metrics_all_zeros():
     p = prr(ab)
     assert not math.isnan(p)
     assert math.isclose(p, 1.0, rel_tol=0.01)
+
+
+def test_benjamini_hochberg_fdr_known_values():
+    pvals = [0.01, 0.04, 0.03, 0.002]
+    qvals = benjamini_hochberg_fdr(pvals)
+
+    # Expected BH-adjusted q-values in original order
+    expected = [0.02, 0.04, 0.04, 0.008]
+    for q, e in zip(qvals, expected):
+        assert math.isclose(q, e, rel_tol=1e-9)
+
+
+def test_benjamini_hochberg_fdr_empty():
+    assert benjamini_hochberg_fdr([]) == []
+
+
+def test_chi_square_p_value_monotonic():
+    weak = ABCD(A=5, B=5, C=5, D=5, N=20)
+    strong = ABCD(A=20, B=1, C=1, D=20, N=42)
+
+    p_weak = chi_square_p_value(weak)
+    p_strong = chi_square_p_value(strong)
+
+    assert 0.0 <= p_weak <= 1.0
+    assert 0.0 <= p_strong <= 1.0
+    assert p_strong < p_weak
 

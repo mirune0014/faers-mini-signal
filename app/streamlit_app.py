@@ -24,6 +24,8 @@ else:
 from faers_signal import _resources
 from faers_signal.metrics import (
     ABCD,
+    benjamini_hochberg_fdr,
+    chi_square_p_value,
     prr,
     chi_square_1df,
     ror,
@@ -313,7 +315,6 @@ st.caption(
 # ── Visualization ────────────────────────────────────────────────
 if not mdf.empty and "PRR" in mdf.columns:
     import altair as alt
-    from scipy.stats import chi2 as _chi2_dist
 
     st.subheader("📊 可視化")
     chart_type = st.selectbox(
@@ -349,24 +350,11 @@ if not mdf.empty and "PRR" in mdf.columns:
             use_fdr = "BH-FDR" in volcano_mode
 
             if use_fdr:
-                # Compute p-values from Chi2, then apply BH-FDR
-                pvals = vdf["Chi2"].apply(
-                    lambda x: max(1e-300, 1 - _chi2_dist.cdf(x, 1))
-                    if np.isfinite(x) and x > 0 else 1.0
-                ).values
-                # Benjamini-Hochberg correction (inline, no statsmodels needed)
+                # Compute p-values from Chi2 and apply BH-FDR.
+                pvals = vdf["Chi2"].map(chi_square_p_value).to_numpy(dtype=float)
+                pvals = np.where(np.isfinite(pvals), np.clip(pvals, 1e-300, 1.0), 1.0)
                 n_tests = len(pvals)
-                sorted_idx = np.argsort(pvals)
-                sorted_pvals = pvals[sorted_idx]
-                qvals = np.empty(n_tests)
-                # BH: q_k = min(p_k * m / k, q_{k+1})
-                cummin = 1.0
-                for i in range(n_tests - 1, -1, -1):
-                    rank = i + 1
-                    bh_val = min(sorted_pvals[i] * n_tests / rank, cummin)
-                    bh_val = min(bh_val, 1.0)
-                    cummin = bh_val
-                    qvals[sorted_idx[i]] = bh_val
+                qvals = np.asarray(benjamini_hochberg_fdr(pvals.tolist()), dtype=float)
                 vdf["q_value"] = qvals
                 vdf["neg_log10_q"] = -np.log10(np.clip(vdf["q_value"], 1e-300, 1.0))
                 y_col = "neg_log10_q:Q"

@@ -243,11 +243,17 @@ def ingest_openfda(
         raise typer.Exit(code=2)
 
     total = 0
-    with con:
-        for name, raw in _iter_files(input):
-            events = _iter_events_from_json_bytes(raw)
-            total += _normalize_and_insert(con, events, since=since, until=until, limit=0 if not limit else max(0, limit - total))
-            if limit and total >= limit:
-                break
+    # Do not manage/close the caller-owned connection here.
+    for _, raw in _iter_files(input):
+        events = _iter_events_from_json_bytes(raw)
+        total += _normalize_and_insert(
+            con,
+            events,
+            since=since,
+            until=until,
+            limit=0 if not limit else max(0, limit - total),
+        )
+        if limit and total >= limit:
+            break
 
     typer.echo(f"Ingested {total} reports from {input}")
