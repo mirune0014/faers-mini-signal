@@ -43,6 +43,10 @@ class AnalysisSpec:
     # Drug normalisation
     drug_normalization: str = "raw"  # raw | rxnorm_ingredient
 
+    # Volcano / FDR
+    volcano_y_axis: str = "ic025"  # ic025 | fdr_bh
+    fdr_test_set: Optional[str] = None  # e.g. "A>=3, N=1234 pairs"
+
     # Metric calculation
     haldane_correction: bool = True
     yates_correction: bool = True
@@ -81,6 +85,8 @@ class Manifest:
     total_drugs: int = 0
     total_reactions: int = 0
     total_pairs: int = 0
+    normalization_stats: dict[str, int] = field(default_factory=dict)
+    unmapped_top_20: list[dict[str, Any]] = field(default_factory=list)
     signal_count: int = 0
 
     # Environment
@@ -115,6 +121,30 @@ class Manifest:
                 setattr(self, attr, row[0] if row else 0)
             except Exception:
                 pass
+
+        # Drug normalization stats
+        try:
+            rows = con.execute(
+                "SELECT COALESCE(drug_norm_source, 'unknown') AS src, COUNT(*) AS cnt "
+                "FROM drugs GROUP BY 1"
+            ).fetchall()
+            self.normalization_stats = {r[0]: r[1] for r in rows}
+        except Exception:
+            pass
+
+        # Unmapped top-20 drug names (audit log)
+        try:
+            top_rows = con.execute(
+                "SELECT drug_name, COUNT(*) AS cnt "
+                "FROM drugs "
+                "WHERE COALESCE(drug_norm_source, 'unmapped') = 'unmapped' "
+                "GROUP BY 1 ORDER BY cnt DESC LIMIT 20"
+            ).fetchall()
+            self.unmapped_top_20 = [
+                {"drug_name": r[0], "count": r[1]} for r in top_rows
+            ]
+        except Exception:
+            pass
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
