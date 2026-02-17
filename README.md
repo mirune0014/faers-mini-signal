@@ -1,6 +1,6 @@
 # faers-mini-signal
 
-DuckDB と Streamlit を使って FAERS（FDA Adverse Event Reporting System）の不均衡解析（PRR / ROR±95%CI / IC±95%CI）を行うツールです。正規化済みの `reports` / `drugs` / `reactions` テーブルから ABCD 分割表を集計し、指標を計算して UI に表示します。
+DuckDB と Streamlit を使って FAERS（FDA Adverse Event Reporting System）の不均衡解析（PRR / ROR±95%CI / IC±95%CI）を行うツールです。`reports` / `drugs` / `reactions` テーブルから ABCD 分割表を集計し、指標を計算して UI に表示します。
 
 ## 背景・目的
 
@@ -11,10 +11,13 @@ DuckDB と Streamlit を使って FAERS（FDA Adverse Event Reporting System）�
 ## 主な機能
 
 - **シグナル検出指標**: PRR, ROR±95%CI, IC±95%CI, χ²（Yates 補正付き）
+- **シグナル判定モード**: `Sensitive`（1/3基準）/ `Balanced`（2/3基準, 推奨）/ `Specific`（3/3基準）
 - **シグナル判定ハイライト**: Evans 3 条件（PRR≥2, χ²≥4, A≥3）/ ROR 下限CI>1 / IC 下限CI>0 を自動判定し、⚠️ マーク＋色分け表示
-- **可視化（仮設）**: Volcano Plot / バブルチャート / ヒートマップ（選択式）
+- **ランキングとTopN制御**: `IC025降順` / `A降順` / `IC025×log(1+A)` の基準で可視化対象を選定
+- **可視化**: Volcano Plot / バブルチャート / ヒートマップ（後述の仕様で描画）
 - **openFDA API ダウンロード**: UI のサイドバーから薬剤名・期間を指定して直接データ取得（最大 26,000 件）
 - **複数のデータソース**: openFDA ローカル JSON/ZIP、FAERS 四半期ファイル、デモデータ
+- **説明可能性ログ**: UI/CLI の条件を `Manifest (JSON)` として出力
 - **ゼロセル補正**: Haldane–Anscombe 補正（+0.5）による安定した指標計算
 - **サンプルデータ同梱**: 5,000 件の実 FAERS データ（`data/sample.duckdb`）がリポジトリに含まれており、セットアップ直後から分析可能
 
@@ -73,10 +76,60 @@ streamlit run app/streamlit_app.py
 
 ### UI の使い方
 
-- **フィルタ**（サイドバー）: 被疑薬のみ / 最小A件数 / 薬剤名・PT の前方一致
-- **シグナル判定テーブル**: ABCD と各指標を表示。⚠️ マーク行がシグナル検出。「シグナル検出のみ表示」で絞り込み可能
-- **可視化（仮設）**: Volcano Plot / バブルチャート / ヒートマップを選択式で表示
-- **CSV ダウンロード**: テーブルデータを CSV で出力
+**1. サイドバー設定**
+
+- フィルタ: 被疑薬のみ（`role=1`）/ 最小A件数 / 薬剤名前方一致 / 副作用PT前方一致
+- シグナル判定モード: `Sensitive` / `Balanced` / `Specific`
+- ランキング基準: `IC025降順` / `報告件数A降順` / `バランス (IC025 × log(1+A))`
+- `TopN`: 可視化の上位薬剤・上位PTの選定件数（5〜50）
+
+**2. シグナル検出結果テーブル**
+
+- ABCD と各指標（PRR, χ², ROR±CI, IC±CI）を表示
+- フラグ列 `flag_evans` / `flag_ror025` / `flag_ic025` を表示
+- 判定行は `⚠️` と行背景色でハイライト
+- `⚠️ シグナル検出のみ表示` を ON にすると、表だけでなく後続の可視化対象データも同条件で絞り込み
+- ダウンロード: `CSV` と `Manifest (JSON)` をUIから出力可能
+
+**3. 可視化の実装仕様（詳細）**
+
+**共通前処理**
+
+- 可視化対象は、テーブル表示に使っている `mdf`（フィルタ・判定モード・最小A件数適用後）
+- `PRR` と `Chi2` が欠損の行を除外
+- `PRR` が有限値で `0 < PRR < 1e6` の行のみ残して外れ値を抑制
+- 補助列として `log2_PRR`, `IC025(=IC_loの欠損補完0)`, `label(drug + pt)` を作成
+
+**Volcano Plot**
+
+- X軸: `log₂(PRR)`
+- Y軸: `IC₀₂₅`（`IC_lo`、欠損時は0）
+- 色: `⚠️` 行は赤、非シグナルはグレー
+- しきい値線:
+  - 縦線 `x=1.0`（`PRR=2`）
+  - 横線 `y=0.0`（`IC₀₂₅=0`）
+- Tooltip: `drug+pt`, `A`, `PRR`, `ROR`, `IC`, `IC_lo`, `Signal`, 3種フラグ
+- `interactive()` によりズーム・パン可能
+
+**バブルチャート**
+
+- 表示対象薬剤: ランキング基準に基づく `TopN` 薬剤
+- X軸: 薬剤名
+- Y軸: `PRR`
+- バブルサイズ: `A`（報告件数）
+- 色: `⚠️` は赤、非シグナルは青
+- Tooltip: 薬剤名、PT、主要指標、判定フラグ
+
+**ヒートマップ**
+
+- 表示対象: ランキング基準に基づく `TopN` 薬剤 × `TopN` PT
+- 軸: X=副作用PT, Y=薬剤名
+- 色指標を切替可能:
+  - `IC₀₂₅（推奨）`
+  - `IC（点推定）`
+  - `PRR`
+- カラースケール: `redblue`（中心0）
+- セル上に `A`（報告件数）を数字で重ねて表示
 
 ### 指標計算・ファイル出力（CLI）
 
@@ -86,6 +139,14 @@ faers-signal build --db data/faers.duckdb --out data/metrics.parquet
 # 任意の SQL 結果をエクスポート
 faers-signal export --db data/faers.duckdb --sql "SELECT * FROM reports LIMIT 10" --out data/export.csv
 ```
+
+`build` の主なオプション:
+
+- `--suspect-only` / `--no-suspect-only`: 被疑薬のみ集計（デフォルト: 被疑薬のみ）
+- `--min-a N`: A 件数が `N` 以上の行のみを保持（デフォルト: 3）
+- `--signal-mode sensitive|balanced|specific`: シグナル判定モード（デフォルト: `balanced`）
+
+`build` 実行時は、メトリクス出力に加えて同名の `*.manifest.json` も生成されます。
 
 ## Windows exe 版
 
@@ -116,6 +177,7 @@ Python 環境がなくても利用できるスタンドアロン exe 版があ�
 src/faers_signal/     # メインパッケージ
 ├── cli.py            # CLI エントリポイント
 ├── metrics.py        # PRR/ROR/IC/χ² 計算
+├── analysis_spec.py  # 解析条件(AnalysisSpec)と実行記録(Manifest)
 ├── ingest_demo.py    # デモデータ取り込み
 ├── ingest_openfda.py # openFDA ローカルファイル取り込み
 ├── ingest_qfiles.py  # 四半期ファイル取り込み
