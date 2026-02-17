@@ -132,6 +132,7 @@ def build(
     spec = AnalysisSpec(
         suspect_only=suspect_only,
         min_a=min_a,
+        drug_normalization="rxnorm_ingredient",
         signal_mode=signal_mode,
     )
     manifest = Manifest(spec=spec)

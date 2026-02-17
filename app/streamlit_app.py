@@ -281,15 +281,14 @@ _spec = AnalysisSpec(
     min_a=int(min_a),
     drug_filter=drug_filter or None,
     pt_filter=pt_filter or None,
+    drug_normalization="rxnorm_ingredient",
     signal_mode=signal_mode,
     ranking_criterion=ranking_criterion,
     top_n=int(top_n),
 )
 _manifest = Manifest(spec=_spec)
 _manifest.populate_env()
-_manifest.total_reports = report_count
-_manifest.total_drugs = drug_count
-_manifest.total_reactions = pt_count
+_manifest.populate_db_stats(con)
 _manifest.total_pairs = len(mdf) if not mdf.empty else 0
 _manifest.signal_count = int((mdf["Signal"] == "⚠️").sum()) if not mdf.empty and "Signal" in mdf.columns else 0
 
@@ -341,20 +340,59 @@ if not mdf.empty and "PRR" in mdf.columns:
             return ranked.index.tolist()
 
         if chart_type == "Volcano Plot":
-            # Mode A (PV-aligned): X = log₂(PRR), Y = IC025
+            # ── Volcano mode selection ──
+            volcano_mode = st.radio(
+                "Volcano Y軸",
+                ["IC₀₂₅（PV整合・推奨）", "-log₁₀(q) BH-FDR（探索用）"],
+                horizontal=True,
+            )
+            use_fdr = "BH-FDR" in volcano_mode
+
+            if use_fdr:
+                # Compute p-values from Chi2, then apply BH-FDR
+                pvals = vdf["Chi2"].apply(
+                    lambda x: max(1e-300, 1 - _chi2_dist.cdf(x, 1))
+                    if np.isfinite(x) and x > 0 else 1.0
+                ).values
+                # Benjamini-Hochberg correction (inline, no statsmodels needed)
+                n_tests = len(pvals)
+                sorted_idx = np.argsort(pvals)
+                sorted_pvals = pvals[sorted_idx]
+                qvals = np.empty(n_tests)
+                # BH: q_k = min(p_k * m / k, q_{k+1})
+                cummin = 1.0
+                for i in range(n_tests - 1, -1, -1):
+                    rank = i + 1
+                    bh_val = min(sorted_pvals[i] * n_tests / rank, cummin)
+                    bh_val = min(bh_val, 1.0)
+                    cummin = bh_val
+                    qvals[sorted_idx[i]] = bh_val
+                vdf["q_value"] = qvals
+                vdf["neg_log10_q"] = -np.log10(np.clip(vdf["q_value"], 1e-300, 1.0))
+                y_col = "neg_log10_q:Q"
+                y_title = "-log₁₀(q) BH-FDR"
+                thresh_y = -np.log10(0.05)
+                thresh_label = "q=0.05"
+            else:
+                y_col = "IC025:Q"
+                y_title = "IC₀₂₅（IC 下限 95%CI）"
+                thresh_y = 0.0
+                thresh_label = "IC₀₂₅=0"
+
             volcano = (
                 alt.Chart(vdf)
                 .mark_circle(size=60, opacity=0.7)
                 .encode(
                     x=alt.X("log2_PRR:Q", title="log₂(PRR)"),
-                    y=alt.Y("IC025:Q", title="IC₀₂₅（IC 下限 95%CI）"),
+                    y=alt.Y(y_col, title=y_title),
                     color=alt.condition(
                         alt.datum.Signal == "⚠️",
                         alt.value("#e74c3c"),
                         alt.value("#95a5a6"),
                     ),
                     tooltip=["label", "A", "PRR", "ROR", "IC", "IC_lo", "Signal",
-                             "flag_evans", "flag_ror025", "flag_ic025"],
+                             "flag_evans", "flag_ror025", "flag_ic025"]
+                             + (["q_value"] if use_fdr else []),
                 )
                 .properties(width="container", height=450)
                 .interactive()
@@ -363,15 +401,25 @@ if not mdf.empty and "PRR" in mdf.columns:
             prr_line = alt.Chart(pd.DataFrame({"x": [1.0]})).mark_rule(
                 strokeDash=[4, 4], color="orange"
             ).encode(x="x:Q")
-            ic025_line = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
+            y_thresh_line = alt.Chart(pd.DataFrame({"y": [thresh_y]})).mark_rule(
                 strokeDash=[4, 4], color="orange"
             ).encode(y="y:Q")
 
-            st.altair_chart(volcano + prr_line + ic025_line, use_container_width=True)
-            st.caption(
-                "X: log₂(PRR)、Y: IC₀₂₅（IC下限95%CI）。"
-                "オレンジ線: PRR=2 (縦), IC₀₂₅=0 (横)。赤点=シグナル検出"
-            )
+            st.altair_chart(volcano + prr_line + y_thresh_line, use_container_width=True)
+            if use_fdr:
+                st.caption(
+                    f"X: log₂(PRR)、Y: -log₁₀(q値, BH-FDR)。"
+                    f"検定集合: A≥{min_a} の {n_tests:,} ペア。"
+                    f"オレンジ線: PRR=2 (縦), q=0.05 (横)。赤点=シグナル検出"
+                )
+                # Record FDR test-set definition in manifest
+                _spec.volcano_y_axis = "fdr_bh"
+                _spec.fdr_test_set = f"A>={min_a}, N={n_tests} pairs"
+            else:
+                st.caption(
+                    "X: log₂(PRR)、Y: IC₀₂₅（IC下限95%CI）。"
+                    "オレンジ線: PRR=2 (縦), IC₀₂₅=0 (横)。赤点=シグナル検出"
+                )
 
         elif chart_type == "バブルチャート":
             top_drugs = _get_top_items(vdf, "drug", int(top_n))
