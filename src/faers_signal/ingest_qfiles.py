@@ -218,27 +218,27 @@ def ingest_qfiles(
         keep_ids = keep_ids[:limit]
     keep_set = set(keep_ids)
 
-    with con:
-        # Idempotent upsert per safetyreportid
-        for sid in keep_ids:
-            con.execute("DELETE FROM reactions WHERE safetyreportid = ?", [sid])
-            con.execute("DELETE FROM drugs WHERE safetyreportid = ?", [sid])
-            con.execute("DELETE FROM reports WHERE safetyreportid = ?", [sid])
+    # Do not manage/close the caller-owned connection here.
+    # Idempotent upsert per safetyreportid
+    for sid in keep_ids:
+        con.execute("DELETE FROM reactions WHERE safetyreportid = ?", [sid])
+        con.execute("DELETE FROM drugs WHERE safetyreportid = ?", [sid])
+        con.execute("DELETE FROM reports WHERE safetyreportid = ?", [sid])
 
-        # Insert reports
-        con.executemany(
-            "INSERT INTO reports (safetyreportid, receivedate, primarysource_qualifier) VALUES (?, ?, ?)",
-            [reports[sid] for sid in keep_ids],
-        )
+    # Insert reports
+    con.executemany(
+        "INSERT INTO reports (safetyreportid, receivedate, primarysource_qualifier) VALUES (?, ?, ?)",
+        [reports[sid] for sid in keep_ids],
+    )
 
-        # Insert drugs and reactions filtered by keep_set
-        con.executemany(
-            "INSERT INTO drugs (safetyreportid, drug_name, role) VALUES (?, ?, ?)",
-            [row for row in drugs_rows if row[0] in keep_set],
-        )
-        con.executemany(
-            "INSERT INTO reactions (safetyreportid, meddra_pt) VALUES (?, ?)",
-            [row for row in reac_rows if row[0] in keep_set],
-        )
+    # Insert drugs and reactions filtered by keep_set
+    con.executemany(
+        "INSERT INTO drugs (safetyreportid, drug_name, role) VALUES (?, ?, ?)",
+        [row for row in drugs_rows if row[0] in keep_set],
+    )
+    con.executemany(
+        "INSERT INTO reactions (safetyreportid, meddra_pt) VALUES (?, ?)",
+        [row for row in reac_rows if row[0] in keep_set],
+    )
 
     typer.echo(f"Ingested {len(keep_ids)} reports from {input}")

@@ -11,18 +11,20 @@
 --   by replacing the WHERE clause in the first CTE.
 
 -- Suspect drug set (role=1)
-CREATE TEMP TABLE suspect AS
-SELECT DISTINCT safetyreportid, lower(drug_name) AS drug
+-- Use normalized name when available, fallback to lower(drug_name)
+CREATE OR REPLACE TEMP TABLE suspect AS
+SELECT DISTINCT safetyreportid,
+       COALESCE(drug_name_normalized, lower(drug_name)) AS drug
 FROM drugs
 WHERE role = 1;
 
 -- Reaction PT set
-CREATE TEMP TABLE rxn AS
+CREATE OR REPLACE TEMP TABLE rxn AS
 SELECT DISTINCT safetyreportid, lower(meddra_pt) AS pt
 FROM reactions;
 
 -- Co-occurrence counts for A
-CREATE TEMP TABLE a_counts AS
+CREATE OR REPLACE TEMP TABLE a_counts AS
 SELECT s.drug, r.pt, COUNT(*) AS A
 FROM suspect s
 JOIN rxn r USING (safetyreportid)
@@ -56,4 +58,3 @@ FROM a_counts a
 JOIN drug_tot d USING (drug)
 JOIN pt_tot r USING (pt)
 CROSS JOIN rep_tot;
-
