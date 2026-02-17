@@ -9,25 +9,9 @@ def test_ingest_demo_and_abcd_sql(tmp_path: Path):
     db = tmp_path / "demo.duckdb"
     con = duckdb.connect(str(db))
 
-    # Create schema (mirrors packaged schema.sql minimal parts used here)
-    con.execute(
-        """
-        CREATE TABLE reports(
-          safetyreportid VARCHAR PRIMARY KEY,
-          receivedate DATE,
-          primarysource_qualifier INTEGER
-        );
-        CREATE TABLE drugs(
-          safetyreportid VARCHAR,
-          drug_name VARCHAR,
-          role INTEGER
-        );
-        CREATE TABLE reactions(
-          safetyreportid VARCHAR,
-          meddra_pt VARCHAR
-        );
-        """
-    )
+    # Create schema from packaged definition
+    schema_sql = (Path(__file__).parents[1] / "src" / "faers_signal" / "schema.sql").read_text(encoding="utf-8")
+    con.execute(schema_sql)
 
     # Seed demo data
     ingest_demo(con, reset=True)
@@ -41,4 +25,3 @@ def test_ingest_demo_and_abcd_sql(tmp_path: Path):
     assert int(row.A) >= 1
     # Totals should be consistent with 4 reports
     assert int(row.total_reports) == 4
-

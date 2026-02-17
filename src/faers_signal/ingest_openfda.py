@@ -179,9 +179,17 @@ def _normalize_and_insert(
                 role_i = int(role) if role is not None else None
             except (TypeError, ValueError):
                 role_i = None
+
+            # Drug name normalization
+            from .normalize_drug import normalize_drug_name
+            norm_name, norm_source = normalize_drug_name(
+                name, drug_dict=d, use_rxnorm_api=True,
+            )
+
             con.execute(
-                "INSERT INTO drugs (safetyreportid, drug_name, role) VALUES (?, ?, ?)",
-                [sid, name, role_i],
+                "INSERT INTO drugs (safetyreportid, drug_name, drug_name_normalized, drug_norm_source, role) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [sid, name, norm_name, norm_source, role_i],
             )
 
         # reactions
@@ -235,11 +243,17 @@ def ingest_openfda(
         raise typer.Exit(code=2)
 
     total = 0
-    with con:
-        for name, raw in _iter_files(input):
-            events = _iter_events_from_json_bytes(raw)
-            total += _normalize_and_insert(con, events, since=since, until=until, limit=0 if not limit else max(0, limit - total))
-            if limit and total >= limit:
-                break
+    # Do not manage/close the caller-owned connection here.
+    for _, raw in _iter_files(input):
+        events = _iter_events_from_json_bytes(raw)
+        total += _normalize_and_insert(
+            con,
+            events,
+            since=since,
+            until=until,
+            limit=0 if not limit else max(0, limit - total),
+        )
+        if limit and total >= limit:
+            break
 
     typer.echo(f"Ingested {total} reports from {input}")

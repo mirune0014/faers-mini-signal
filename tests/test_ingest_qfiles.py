@@ -1,5 +1,4 @@
 from pathlib import Path
-import io
 import zipfile
 
 import duckdb
@@ -23,14 +22,9 @@ def test_qfiles_zip_ingest_and_abcd(tmp_path: Path):
     db = tmp_path / "q.duckdb"
     con = duckdb.connect(str(db))
 
-    # Create schema
-    con.execute(
-        """
-        CREATE TABLE reports(safetyreportid VARCHAR PRIMARY KEY, receivedate DATE, primarysource_qualifier INTEGER);
-        CREATE TABLE drugs(safetyreportid VARCHAR, drug_name VARCHAR, role INTEGER);
-        CREATE TABLE reactions(safetyreportid VARCHAR, meddra_pt VARCHAR);
-        """
-    )
+    # Create schema from packaged definition
+    schema_sql = (Path(__file__).parents[1] / "src" / "faers_signal" / "schema.sql").read_text(encoding="utf-8")
+    con.execute(schema_sql)
 
     zip_path = _make_qfiles_zip(tmp_path / "faers_qfiles.zip")
     ingest_qfiles(con, input=zip_path, since=None, until=None, limit=0)
@@ -52,4 +46,3 @@ def test_qfiles_zip_ingest_and_abcd(tmp_path: Path):
     df2 = con.execute(sql).fetch_df()
     row2 = df2[(df2["drug"].str.lower() == "aspirin") & (df2["pt"].str.lower() == "nausea")]
     assert int(row2.iloc[0].A) == 1
-
