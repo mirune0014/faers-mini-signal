@@ -1,108 +1,99 @@
 # Specification (faers-mini-signal)
 
-This document summarizes the data model, ingest mapping, ABCD aggregation, metrics, and CLI options.
-
 ## Data Model (DuckDB)
 
-Tables (see `src/faers_signal/schema.sql`):
+Tables are defined in `src/faers_signal/schema.sql`:
 
 - `reports(safetyreportid VARCHAR PRIMARY KEY, receivedate DATE, primarysource_qualifier INTEGER)`
-- `drugs(safetyreportid VARCHAR, drug_name VARCHAR, role INTEGER)`
-  - `role`: 1=suspect, 2=concomitant, 3=interacting (openFDA drugcharacterization)
+- `drugs(safetyreportid VARCHAR, drug_name VARCHAR, drug_name_normalized VARCHAR, drug_norm_source VARCHAR, role INTEGER)`
+  - `role`: 1 = suspect, 2 = concomitant, 3 = interacting (`patient.drug[].drugcharacterization`)
 - `reactions(safetyreportid VARCHAR, meddra_pt VARCHAR)`
 
-Constraints: Foreign keys reference `reports(safetyreportid)`.
+Foreign keys reference `reports(safetyreportid)`.
 
 ## Ingest Mapping (openFDA `/drug/event`)
 
-- `reports.safetyreportid` ← `safetyreportid`
-- `reports.receivedate` ← `receivedate` (or `receiptdate`), normalized to `YYYY-MM-DD`
-- `reports.primarysource_qualifier` ← `primarysource.qualifier` (int if present)
-- `drugs.drug_name` ← `patient.drug[].medicinalproduct`
-- `drugs.role` ← `patient.drug[].drugcharacterization`
-- `reactions.meddra_pt` ← `patient.reaction[].reactionmeddrapt`
+### `etl --source openfda` (CLI)
 
-Idempotency: for each `safetyreportid`, existing rows are deleted and replaced.
+- Implemented as **local file ingestion** handled by `src/faers_signal/ingest_openfda.py`.
+- Supported formats for `--input`:
+  - `.json`, `.jsonl`, `.ndjson` (optionally `.gz`)
+  - `.zip` archives containing the above
+  - directories (recursive walk)
+- JSON examples:
+  - `safetyreportid` -> `reports.safetyreportid`
+  - `receivedate` or `receiptdate` -> `reports.receivedate` (normalized to `YYYY-MM-DD`)
+  - `primarysource.qualifier` -> `reports.primarysource_qualifier`
+  - `patient.drug[].medicinalproduct` -> `drugs.drug_name`
+  - `patient.drug[].drugcharacterization` -> `drugs.role`
+  - `patient.reaction[].reactionmeddrapt` -> `reactions.meddra_pt`
+- For each `safetyreportid`, existing rows are deleted before insert (idempotent upsert behavior).
+- `--since` / `--until` and `--limit` filters are applied during ingestion.
 
-Supported inputs for `etl --source openfda --input`:
-- `.json`, `.jsonl`, `.ndjson` (optionally `.gz`)
-- `.zip` archives containing the above
-- Directories (recursive)
+### Streamlit UI openFDA API fetch
 
-Filters:
-- `--since` / `--until` (inclusive) apply to `receivedate`
-- `--limit` caps total number of ingested reports
+- The UI uses `src/faers_signal/download_openfda.py` and `fetch_and_ingest()`.
+- It builds a `/drug/event` API query and pages through results, ingesting directly into DuckDB.
+- Download source is not `etl --source openfda`; this path is separate from local-file ETL.
 
 ## Ingest Mapping (FAERS Quarterly Files)
 
-Minimal support accepts DEMO/DRUG/REAC tables from a zip, directory, or single files.
+### `etl --source qfiles`
 
-- DEMO: `PRIMARYID` -> `reports.safetyreportid`; `FDA_DT` (YYYYMMDD) -> `reports.receivedate`
-- DRUG: `PRIMARYID`, `DRUGNAME` -> `drugs.drug_name`; `ROLE_COD` -> `drugs.role`
-  - role map: `PS|SS` -> 1 (suspect), `C` -> 2 (concomitant), `I` -> 3 (interacting)
-- REAC: `PRIMARYID`, `PT` -> `reactions.meddra_pt`
-
-Notes:
-- Delimiters `|`, tab, or comma are auto-detected.
-- Unknown fields (e.g., reporter qualifiers) are set to NULL in `reports.primarysource_qualifier`.
-- Filters: `--since/--until` apply to `FDA_DT` after normalization to `YYYY-MM-DD`.
+- Minimal support for DEMO/DRUG/REAC tables from a zip, directory, or single files.
+- Mapping:
+  - DEMO: `PRIMARYID` -> `reports.safetyreportid`, `FDA_DT` -> `reports.receivedate`
+  - DRUG: `PRIMARYID`, `DRUGNAME`, `ROLE_COD` -> `drugs.safetyreportid`, `drugs.drug_name`, `drugs.role`
+  - REAC: `PRIMARYID`, `PT` -> `reactions.safetyreportid`, `reactions.meddra_pt`
+- Field delimiters (`|`, `\t`, `,`) are auto-detected.
+- Unknown fields are stored as `NULL` where expected.
+- `--since` / `--until` apply to normalized `FDA_DT` (`YYYY-MM-DD`).
 
 ## ABCD Aggregation
 
-Implemented in `src/faers_signal/abcd.sql` with report-level counts:
+Defined by report-level SQL in `src/faers_signal/abcd.sql`:
 
-- A: suspect drug present AND PT present in the same report
-- B: suspect drug present AND PT absent
-- C: suspect drug absent AND PT present
-- D: neither
-
-Defaults use `role = 1` (suspect). CLI/UI can include `role in (1,2,3)` by toggling suspect-only off.
-
-Outputs include per-pair totals: `drug_reports`, `pt_reports`, `total_reports`.
+- `A`: suspect drug present AND target PT present
+- `B`: suspect drug present AND target PT absent
+- `C`: suspect drug absent AND target PT present
+- `D`: neither suspect+PT
 
 ## Metrics
 
-Defined in `src/faers_signal/metrics.py`. Given `ABCD(A,B,C,D,N)`:
+Defined in `src/faers_signal/metrics.py`.
 
-- PRR = (A/(A+B)) / (C/(C+D))
-- χ² (1df, Yates) = ((|AD-BC| - N/2)^2 * N) / ((A+B)(C+D)(A+C)(B+D))
-- ROR = (A/B) / (C/D)
-  - 95% CI: ln(ROR) variance ≈ 1/A + 1/B + 1/C + 1/D → exp( lnROR ± 1.96·SE )
-- IC (simple) = log2( A / E[A] ), E[A] = (A+B)(A+C)/N
-  - 95% CI: normal approximation via delta method
+- PRR = `(A/(A+B)) / (C/(C+D))`
+- Chi-square (1 df, Yates): `((|AD-BC| - N/2)^2 * N) / ((A+B)(C+D)(A+C)(B+D))`
+- ROR = `(A/B) / (C/D)`
+  - 95% CI: `ln(ROR) ± 1.96*SE`, `SE = sqrt(1/A + 1/B + 1/C + 1/D)`
+- IC = `log2(A / E[A])`, `E[A] = (A+B)(A+C)/N`
+  - 95% CI via delta approximation
 
-Numerical stability: zero or invalid cases return `NaN`.
+Zero-cell handling:
+- When any of `A,B,C,D` is zero, **Haldane-Anscombe correction** is applied (`+0.5` to all four cells) before metric computation.
+- With this correction, many zero-cell edge cases are finite rather than returning `NaN`.
 
 ## CLI Interface
 
 Entrypoint: `faers-signal`
 
-- `etl` — initialize schema and ingest data
-  - `--source`: `demo|openfda|qfiles`
-  - `--db`: DuckDB file path (default `data/faers.duckdb`)
-  - `--input`: required for `openfda` (file/dir)
+- `etl` — initialize schema and ingest
+  - `--source`: `openfda|qfiles|demo`
+  - `--db`: DuckDB path (default `data/faers.duckdb`)
+  - `--input`: required for `openfda` and `qfiles`
   - `--since`, `--until`: `YYYY-MM-DD`
   - `--limit`: int (0 = no limit)
-
-- `build` — compute metrics and write Parquet/CSV
-  - `--db`: DuckDB path
-  - `--suspect-only`: bool (default true)
-  - `--min-a`: int (default 3)
-  - `--out`: output path (`.parquet` or `.csv`)
-
-- `export` — run arbitrary SELECT and export to file
+- `build` — compute metrics and write CSV/Parquet
+  - `--db`, `--suspect-only`, `--min-a`, `--signal-mode`, `--out`
+- `export` — run arbitrary `SELECT` and export
   - `--db`, `--sql`, `--out`
-
-- `ui` — launch Streamlit app (uses `FAERS_DB` env internally)
-  - `--db`: DuckDB path
-
-## Packaging & Resources
-
-- `.sql` files and `app/streamlit_app.py` are bundled; loaded via `importlib.resources`.
-- Source layout under `src/faers_signal/` with tests in `tests/`.
+- `ui` — launch Streamlit app
+  - `--db`
 
 ## Limitations & Notes
 
-- Network download of openFDA data is not implemented; use local files.
-- FAERS is a spontaneous reporting system; signals are for hypothesis generation, not causality.
-- Consider de-duplication and stratification in future iterations.
+- openFDA API retrieval is possible from the Streamlit UI via `download_openfda.py`.
+- openFDA paging constraint must be respected: `limit <= 1000`, `skip <= 25000`, therefore maximum retrievable records are **26,000** in one run.
+- For larger windows, use openFDA bulk Downloads or `search_after` pagination.
+- FAERS is spontaneous reporting data; findings are hypothesis-generating, not causal.
+
