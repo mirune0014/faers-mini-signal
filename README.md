@@ -144,7 +144,6 @@ streamlit run app/streamlit_app.py
   - バブルチャート: 薬剤ごとに副作用を可視化
   - ヒートマップ: 薬剤×副作用のマトリクス表示（色=IC下限CI）
 
-<<<<<<< HEAD
 **1. サイドバー設定**
 
 - フィルタ: 被疑薬のみ（`role=1`）/ 最小A件数 / 薬剤名前方一致 / 副作用PT前方一致
@@ -199,9 +198,6 @@ streamlit run app/streamlit_app.py
   - `PRR`
 - カラースケール: `redblue`（中心0）
 - セル上に `A`（報告件数）を数字で重ねて表示
-=======
-- **CSV ダウンロード**: テーブルデータを CSV で出力
->>>>>>> fdeec9382b2955c83d2921cc673ddd11481c4bb9
 
 ## メトリクスの出力
 
@@ -262,19 +258,6 @@ Python 環境がなくても利用できるスタンドアロン exe 版があ�
 ## プロジェクト構成
 
 ```
-<<<<<<< HEAD
-src/faers_signal/     # メインパッケージ
-├── cli.py            # CLI エントリポイント
-├── metrics.py        # PRR/ROR/IC/χ² 計算
-├── analysis_spec.py  # 解析条件(AnalysisSpec)と実行記録(Manifest)
-├── ingest_demo.py    # デモデータ取り込み
-├── ingest_openfda.py # openFDA ローカルファイル取り込み
-├── ingest_qfiles.py  # 四半期ファイル取り込み
-├── download_openfda.py # openFDA API 経由データ取得
-├── _resources.py     # SQL/リソース読み込み
-├── schema.sql        # DuckDB スキーマ定義
-└── abcd.sql          # ABCD 分割表集計クエリ
-=======
 src/faers_signal/         # メインパッケージ
 ├── cli.py                # CLI エントリポイント
 ├── metrics.py            # PRR/ROR/IC/χ² 計算
@@ -287,7 +270,6 @@ src/faers_signal/         # メインパッケージ
 ├── _resources.py         # SQL/リソース読み込み
 ├── schema.sql            # DuckDB スキーマ定義
 └── abcd.sql              # ABCD 分割表集計クエリ
->>>>>>> fdeec9382b2955c83d2921cc673ddd11481c4bb9
 app/
 └── streamlit_app.py      # Streamlit UI
 scripts/
