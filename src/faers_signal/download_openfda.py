@@ -21,7 +21,7 @@ _BASE_URL = "https://api.fda.gov/drug/event.json"
 
 # openFDA hard limits
 _MAX_LIMIT = 1000
-_MAX_SKIP = 26000
+_MAX_SKIP = 25000
 
 
 def _build_search_query(
@@ -37,13 +37,13 @@ def _build_search_query(
         safe = drug.strip().replace('"', "")
         parts.append(f'patient.drug.medicinalproduct:"{safe}"')
     if since and until:
-        parts.append(f"receivedate:[{since.replace('-', '')}+TO+{until.replace('-', '')}]")
+        parts.append(f"receivedate:[{since.replace('-', '')} TO {until.replace('-', '')}]")
     elif since:
-        parts.append(f"receivedate:[{since.replace('-', '')}+TO+20991231]")
+        parts.append(f"receivedate:[{since.replace('-', '')} TO 20991231]")
     elif until:
-        parts.append(f"receivedate:[20040101+TO+{until.replace('-', '')}]")
+        parts.append(f"receivedate:[20040101 TO {until.replace('-', '')}]")
 
-    return "+AND+".join(parts) if parts else None
+    return " AND ".join(parts) if parts else None
 
 
 def _fetch_page(url: str, *, retries: int = 3, backoff: float = 2.0) -> dict[str, Any]:
@@ -84,7 +84,8 @@ def fetch_and_ingest(
         drug: Optional drug name filter (e.g. ``"aspirin"``).
         since: Optional start date ``YYYY-MM-DD``.
         until: Optional end date ``YYYY-MM-DD``.
-        max_records: Maximum number of reports to fetch (capped at 26,000 by API).
+        max_records: Maximum number of reports to fetch.
+            Capped at (_MAX_SKIP + _MAX_LIMIT) = 26,000.
         progress_callback: ``callback(fetched_so_far, total_target)`` called after
             each page for progress reporting.
 
@@ -106,7 +107,9 @@ def fetch_and_ingest(
         if search_q:
             params["search"] = search_q
 
-        url = _BASE_URL + "?" + "&".join(f"{k}={v}" for k, v in params.items())
+        url = _BASE_URL + "?" + urllib.parse.urlencode(
+            params, quote_via=urllib.parse.quote
+        )
 
         try:
             data = _fetch_page(url)
